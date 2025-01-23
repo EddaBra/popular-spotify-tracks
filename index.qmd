@@ -1,0 +1,895 @@
+---
+title: "Exploring polular Spotify Tracks"
+---
+
+What makes a song popular in todays world? Is there a secret receipt for success? In this project I investigate these and further questions using a open source data set of Spotify tracks. 
+
+**About the [data set](https://www.kaggle.com/datasets/solomonameh/spotify-music-dataset/data)**: The dataset is collated from Spotify's API using two separate python scripts to extract popular and non-popular songs and their associated audio and descriptive features. Descriptive features of a song include information about the song such as the artist name, album name and release date. Audio features include key, valence, danceability and energy which are results of spotify's audio analysis.
+
+**Step 1. Load the libraries**
+
+```{r libraries, results= 'hide'}
+#renv::install("ISLR")
+library(tidyverse) #basic
+library(tibble) #tibble
+library(ggplot2) #ggplot
+library(ggExtra) #for marginal histograms and more
+library(ggrepel) #label for graphs
+library(ggcorrplot) # for ggpcorrpltos
+library(ggthemes)
+library(viridis)
+library(viridisLite)
+library(scales) #palettes for high readability and accessibility for visualisations
+library(grid)
+library(gt) # for tables
+library(gtsummary)
+library(ggsurvey)
+library(gtExtras) # for tables
+library(webshot2) # save gt tables as png
+library(data.table) #transpose data frames
+library(extrafont) # for extra fonts
+library(lubridate) #dates to numeric
+library(showtext) #for adding fonts
+library(caret) #train test data set
+library(glmnet) # for ridge regression
+library(ISLR) # for splines and polys
+library(splines)
+loadfonts(device="win", quiet= TRUE)
+font_add_google(name="Barlow", family="Barlow")
+showtext_auto()
+options("scipen"=100, "digits"=4)
+```
+
+**Step 2. Global options**
+
+```{r gen op, results='hide'}
+options(digits=3)
+```
+
+**Step 3. Import data**
+
+```{r import data}
+data <- read.csv("data/high_popularity_spotify_data.csv")
+```
+
+**Step 4. Check data**
+
+```{r check}
+print("Are there any missing values in the data set?")
+sum(is.na(data))
+print("only 1 missing value. Exclude it")
+data <- data %>% na.omit(data)
+print("Is the data in a tibble format?")
+is_tibble(data)
+```
+
+```{r convert tibble, results='hide'}
+print("convert into a tibble format")
+as_tibble(data)
+```
+
+```{r str, results='hide'}
+#explore the structure
+str(data)
+```
+
+**Step 5. Create an own theme**
+
+```{r theme, results='hide'}
+theme_own <- function(){
+  theme_minimal() +
+    theme(text=element_text(size=12,family = "Barlow"),
+          axis.text.x = element_text(size = 10, angle=90),
+          axis.text.y = element_text(size = 10),
+          axis.title = element_text(size = 11, face = "bold"),
+          panel.grid.minor = element_blank(),
+          plot.title = element_text(size=14, face="bold"),
+          panel.grid.major = element_line(colour = "grey70", linewidth =  0.2),
+          legend.position="bottom",
+          legend.title = element_text(size=11),
+          legend.text = element_text(size=10),
+          strip.text = element_text(size = 10),
+          strip.placement = "outside",
+          panel.spacing = unit(1, "lines"),
+          strip.background = element_blank()) }
+```
+
+```{r palette}
+show_col(viridis_pal(option = "inferno")(20))
+#1 Farbe
+vi.col_1 <- "#5D126EFF" 
+vi.col_1.2 <- "#FCA50AFF" 
+vi.col_1.3 <- "#F8850FFF"
+vi.col_1.4 <- "#DD513AFF"
+#2 Farben 
+vi.col_2 <- c("#5D126EFF", 
+              "#FCA50AFF") 
+
+vi.col_light <- c("#FCFFA4FF",
+                  "#FAC62DFF",
+                  "#FCA50AFF",
+                  "#F17020FF", 
+                  "#DD513AFF",
+                  "#B1325AFF",
+                  "#932667FF")
+# 6 Farben
+vi.col_6 <- c("#0C0826FF",
+              "#5D126EFF", 
+              "#932667FF", 
+              "#DD513AFF", 
+              "#FCA50AFF", 
+              "#FAC62DFF"  
+              ) 
+
+```
+
+# Which genres are dominating and when have been the tracks released?
+
+To get a bigger picture about tracks in the data set, it could be interesting, how many tracks in the data set belongs to a certain genre. Also, it could be a useful background information in which year and which month a song is released. 
+
+Firs, let us have closer look to the genres. Genres are assigned by using the Spotify's categorization of the playlist, where the track in. Overall, the data set contains tracks from `r length(unique(data$playlist_name))` playlists. `r length(unique(data$track_artists))` have sung the the tracks, so some artists have sung more than of the songs in the data set or some songs are listed twice, because they are assigned to different genres. All in all `r length(unique(data$playlist_genre))` are in the data set.
+
+```{r genres_table}
+#create a nice table with all the genres in it
+genres_table <- data %>% group_by(playlist_genre) %>% summarize(Frequency = n()) %>% #number per group
+  arrange(desc(Frequency)) %>%
+  gt() %>% #for nice table
+  tab_header(title="Number of tracks per genre") %>%
+  cols_label(playlist_genre= "Genre") %>%
+  tab_options(column_labels.background.color = vi.col_1)%>%
+  tab_style(
+    style= cell_text(
+      weight= 'bold',
+      font = google_font("Barlow")),
+    locations=cells_title(groups='title')) %>%
+  gt_theme_nytimes()
+genres_table
+```
+
+
+For assessing the genres, I subset the data to avoid bias and get a clearer overview.
+
+```{r prep var, results='hide'}
+class(data$playlist_genre)
+data$playlist_genre <- as.factor(data$playlist_genre)
+table(data$playlist_genre)
+#get a subset with genres >=30 to avoid bias
+genre_levels30 <- data %>% group_by(playlist_genre) %>% summarize(N= n()) %>% filter(N >=30)
+data$genre30 <- ifelse(data$playlist_genre %in% genre_levels30$playlist_genre, as.character(data$playlist_genre), "Others")
+table(data$genre30)
+#subset to include the big genres >=100 only
+genre_levels100 <- data %>% group_by(playlist_genre) %>% summarize(N= n()) %>% filter(N >=100)
+data$genre100 <- ifelse(data$playlist_genre %in% genre_levels100$playlist_genre, as.character(data$playlist_genre), "Others")
+table(data$genre100)
+```
+
+What genres does the tracks have?
+
+```{r genre_pie}
+#get numbers per subgenre
+data_genre <- data %>% group_by(genre100) %>% summarize(freq=n()) %>%
+   #compute percentages and positions
+  mutate(percentage = paste(100*round(freq / sum(freq),2),"%"), pos= cumsum(freq) - freq-2)
+  
+genre_pie <-ggplot(data_genre, aes(x="", y=freq, fill=genre100))+
+  geom_bar(stat="identity", position="stack",color="white", size=2)+
+  geom_text(aes(label=percentage, color=genre100), position= position_stack(vjust=0.5))+
+  scale_color_manual(values= c(rep("white",4), rep("black",3)))+
+  guides(color="none")+
+  coord_polar("y",start=0,clip="off")+
+    scale_fill_viridis(discrete=TRUE, option="inferno")+
+  theme_void()+
+  theme(text=element_text(size=12,family = "Barlow"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())+
+  labs(x = NULL, y = NULL, fill="Playlist Genre",title="Tracks by Genre", subtitle= "Pie Chart") 
+genre_pie
+```
+Let's have a look into the subgenres, where categories are under 20 are assigned to the category "Other" for an better overview.
+
+```{r subgenre_donut}
+subgenre_levels50<- data %>% group_by(playlist_subgenre) %>% summarize(N= n()) %>% filter(N >49)
+data$subgenre50 <- ifelse(data$playlist_subgenre %in% subgenre_levels50$playlist_subgenre, as.character(data$playlist_subgenre), "Others")
+
+subgenre_data <- data %>%
+  # group and summarize the freq
+  group_by(subgenre50) %>% summarize(freq=n()) %>%
+  #get pos and percentages
+  mutate(percentage = paste(100*round(freq / sum(freq),2),"%"), pos= cumsum(freq) - freq-2) %>%
+  #get the cumulative percentages for top and bottom of each rectangle
+  mutate(ymax = c(cumsum(freq)),
+         ymin =c(0, head(ymax, n=-1)),
+         pos= ymax +ymin/2,
+         label = paste0(subgenre50, "\n:", percentage))
+
+
+subgenre_donut <- ggplot(subgenre_data, aes(x=3.5, y=freq, fill=subgenre50)) +
+  geom_col(color="white", size=2) +
+  geom_text(aes(label = percentage, color=subgenre50),
+            position = position_stack(vjust = 0.5)) +
+    scale_color_manual(values=c(rep("white",5), rep("black",4)))+
+  guides(color="none")+
+  scale_fill_viridis(discrete=TRUE, option="inferno")+
+  coord_polar(theta="y") +
+  labs(fill= "Subgenres", title="Percentage of Subgenres", subtitle="Doghnut Plot")+
+  xlim(c(0.2, 3.5+ 0.5))+
+  theme_void()+
+  theme(text=element_text(size=12,family = "Barlow"))
+  
+subgenre_donut
+```
+
+
+When have been the songs released? What is the time span, we are talking about?
+
+```{r release}
+#modify for only getting the years
+data$release_year <- base::substr(data$track_album_release_date,1,4)
+data$release_year <- as.numeric(data$release_year)
+
+#get the months
+data <- data %>% mutate(release_month= month(track_album_release_date))
+print("How many values for months are missing?")
+table(is.na(data$release_month))
+```
+
+How old are the songs in the data set?
+
+```{r year_hist, warning=FALSE}
+max(data$release_year)
+year_hist <- ggplot(data, aes(release_year))+
+  geom_histogram(fill=vi.col_1)+
+  labs(title = "How many of the songs are released in a certain year?", subtitle= "Histogram",x="Year", y="Frequency")+
+  scale_x_continuous(breaks=seq(1950,2025,5), limits = c(1950,2025))+
+  theme_own()
+year_hist
+```
+You can see, the most popular songs are not that old! Could we get more information about it?
+
+```{r descr age}
+print("What is the average age on an song in the data set?")
+data <- data %>% mutate(track_age = 2024 - release_year)
+mean(data$track_age)
+print("On the average, songs in the data set are around 12 years old/")
+print("And what is the median?")
+median(data$track_age)
+print("Interesting! 50 percent of the songs in the data set has been released in the last 6 years!")
+```
+
+Is there a favorite month for releasing an album?
+
+```{r month_hist, warning=FALSE}
+month_hist <- ggplot(data, aes(release_month))+
+  geom_histogram(fill=vi.col_1.2)+
+  labs(title = "How many of the songs are released in a certain year?", subtitle= "Histogram",x="Year", y="Frequency")+
+  scale_x_continuous(breaks=seq(1,12,1), limits = c(1,12))+
+  theme_own()
+month_hist
+```
+
+Also interesting! Having in mind we have `r table(is.na(data$release_month)` in the data set, this graph shows none of the tracks have been released in January or December. Most tracks had definitely been reselased October. The begin of autumn gives apparently the spirit for extensive music listening. 
+
+
+# How are the features connected to each other?
+
+Twelve audio features are given in this data set, which are used by spotify for data analysis. The following table shows the features:
+
+```{r feature_table}
+feature_tabledata <- data.frame(
+  Features= c("Energy", "Tempo", "Danceability", "Loudness", "liveness", "Valence", "Speechiness", "Instrumentalness", "Mode", "Key","Duration_ms", "Acousticness"),
+  Description= c("A measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy.","The speed of a track, measured in beats per minute (BPM).", "A score describing how suitable a track is for dancing based on tempo, rhythm stability, beat strength and overall regularity.", "The overall loudness of a track in decibels (dB). Higher values indicate louder tracks overall.", "The likelihood of a track being performed live. Higher values suggest more audience presence.", "The overall musical positiveness(emotion) of a track. High valence sounds happy; low valence sounds sad or angry.", "Measures the presence of spoken words.", "The likelihood a track contains no vocals. Values closer to 1.0 suggest solely instrumental tracks.", "Indicates the modality of the track.","The musical key, represented as an integer from 0 to 11, mapping to standard Pitch class notation.","The length of the track in milliseconds.", "A confidence measure of whether a track is acoustic(1) or not(0).")) 
+
+feature_table <- gt(feature_tabledata) %>%
+  tab_header(title="Features",subtitle="Spotify's Analysis Features") %>%
+  tab_options(column_labels.background.color = vi.col_1)%>%
+  tab_style(
+    style= cell_text(
+      weight= 'bold',
+      font = google_font("Barlow")),
+    locations=cells_title(groups='title')) %>%
+    tab_style(
+    style= list(cell_fill(color= "thistle"),
+                cell_text(weight="bold")),
+    locations=cells_body(columns=Features)) %>%
+  gt_theme_nytimes()
+feature_table
+```
+
+Let's first have a look at two features, that I find particularly interesting, danceability and energy. In my opinion, both features could be very crucial, when it comes to the characterization of music. I would assume, that both features are somehow interwined to each other and also in some way connected to the other factors as well.  I would like to explore, if I can see hints for a connection using data visualization. Also, it is likely, that these features are also very different distributed through genres.
+
+## How are danceability and energy are connected?
+
+Create a density plot to explore, how the distributions overlap. Use all data for it.
+
+```{r energy_dance_dense_plot}
+energy_dance_dense_plot <- ggplot(data, aes(x=danceability, y= energy))+
+  geom_point(colour="#1F988BFF")+
+  geom_density_2d_filled(alpha= 0.5)+
+  geom_density_2d(colour="#440154FF")+
+  labs(title="Energy and Danceability", subtilte="Density Plot")+
+  scale_color_viridis_c(option="inferno")+
+  scale_y_continuous(breaks=seq(0,1,0.25), limits=c(0,1))+
+  scale_x_continuous(breaks=seq(0,1,0.25),limits=c(0,1))+
+  theme_own()
+energy_dance_dense_plot  
+```
+
+Key insights:
+
+-   You can see from this graph, that  tracks on spotify are high in energy and danceability (the density under 0.25 in energy and danceability are very low, the highest density is around 0.75 and quite high) &rarr; our inituition would say us, that a lot of songs are characterized by high energy and high density. The density plot gives a first hint, that this could actually the case. 
+
+
+Let's create a scatter plot to investigates connections. It gives good insgiths in possible relationsships. Use the data set with only the 6 biggest genres in it, so the plot isn't to messy
+
+```{r energy_dance_scat_plot}
+energy_dance_scat_plot <- ggplot(data, aes(danceability, energy))+
+  geom_point(alpha=0.7,aes(color= genre100))+
+  labs(title= "Energy and dancability by genre", subtitle="Scatter plot", color= "Playlist genre")+
+  scale_color_viridis(discrete=TRUE, option="inferno")+
+  scale_y_continuous(breaks=seq(0,1,0.25), limits=c(0,1))+
+  scale_x_continuous(breaks=seq(0,1,0.25),limits=c(0,1))+
+  theme_own()
+energy_dance_scat_plot
+```
+
+Key insights:
+
+-   whereas rock and pop music tracks could also have lower danceability, the most tracks of the other genres are characterized by an higher dancability than 0.4
+-   interesting is, that rock music has higher energy, but if the energy level is lower, they can have also I higher dancability.
+-   most of the electronic tracks are high in energy.
+-   especially for energy you can see that the vast majority is high in energy
+
+Let's plot the density in direct comparison, neglecting the genres. 
+
+```{r}
+energy_dance_dense_plot <- ggplot(data)+
+  geom_density(aes(energy, ..density..), fill=vi.col_1)+ #top
+  geom_label(aes(x=0.9, y=0.8,
+                 label="Energy"), color=vi.col_1)+
+  geom_density(aes(danceability, -..density..), fill=vi.col_1.2)+ #bottom
+  geom_label(aes(x=0.9, y=-0.8,
+                 label="Danceability"), color=vi.col_1.2)+
+  theme_own()+
+  labs(title= "Comparision of Danceability and Energy Distributions", subtitle= "Kernel Density plots", xlab="Score of Energy / Danceability")
+energy_dance_dense_plot
+```
+
+That looks so connected ! Most of the tracks in the data set has a very high danceability and a higher energy!!
+
+Shall we compare the distributions of these items more detailed using kernel densitiy distributions and compare the genres?
+
+```{r energy_dense_plot}
+energy_dense_plot <- ggplot(data, aes(energy, ..scaled..))+
+  geom_density(alpha=0.4, col= vi.col_1, fill=vi.col_1)+
+  labs(title= "Energy score distributions by genres", subtitle = "Kernel Densitity plot", x= "Energy", y= "Density", )+
+  theme_own()+
+  facet_wrap(~genre100)
+energy_dense_plot
+```
+
+```{r dance_dense_plot}
+dance_dense_plot <- ggplot(data, aes(danceability, ..scaled..))+
+  geom_density(alpha=0.4, col= vi.col_1.3, fill=vi.col_1.3)+
+  labs(title= "Danceability score distributions by genres", subtitle = "Kernel Densitity plot", x= "Danceability", y= "Density", )+
+  theme_own()+
+  facet_wrap(~genre100)
+dance_dense_plot
+```
+Key insights:
+
+-   While electronic, pop, and rock are very high in energy, especially latin and hip hop music has a very high danceability
+-   it seems like that songs, that have a middle to high danceability has a middle to high energy. 
+
+It seems like danceability and energy are somehow connected. Are there songs, that have a higher danceability and are lower in energy or vice versa? Let's find out using the whole data set this time!
+
+```{r highenergy_lowdance}
+highenergy_lowdance <- data %>% filter(energy> 0.25 & danceability< 0.25) %>% dplyr::select(track_artist, track_name, playlist_genre, track_popularity, energy, tempo, danceability, loudness, liveness, valence, speechiness,instrumentalness,acousticness,playlist_subgenre)
+highenergy_lowdance
+```
+Looks like tracks with high energy and low danceability are kind of outliers and deviates from the patterns. If you inspect the table you can see, that all the five songs have low speechiness, low instrumentalness and low acoustics in common. Though, they don't belong to the same genre. 
+
+Having a look on the next table, where tracks have a high danceability and low energy, you can see this is a much more common combination. Especially ambient tracks have these characteristics. 
+
+```{r lowenergy_highdance}
+lowenergy_highdance <- data %>% filter(energy< 0.25 & danceability> 0.25) %>% dplyr::select(track_artist, track_name, playlist_genre, track_popularity, energy, tempo, danceability, loudness, liveness, valence, speechiness,instrumentalness,acousticness,playlist_subgenre) %>% arrange(danceability)
+print("This are the top ten at the list, ordered by danceability")
+head(lowenergy_highdance,10)
+print("How many tracks meet this characteristics?")
+nrow(lowenergy_highdance)
+```
+
+## Which role plays the tempo for danceability and energy?
+
+First of all, tempo is often seen as a good indicator for genres. Let's explore if this is true for this data with a dot plot!
+
+```{r tempo_dot_data}
+# Prepare the data and get the mean and standard deviation
+tempo_dot_data <- data %>% group_by(playlist_genre) %>% dplyr::summarise(Mean= mean(tempo), SD= sd(tempo))
+
+# Plot a cleaveland dot plot
+tempo_genre_dot <- ggplot(tempo_dot_data, aes(x=reorder(playlist_genre, Mean), y=Mean))+
+                          geom_pointrange(aes(ymin = Mean - SD, ymax = Mean + SD ), size=1, col=vi.col_1)+
+   labs(title= "The average tempo and the standard deviation per genre", subtitle="Cleaveland Dotplot", x= "Genre", y="Tempo in BPM")+
+                            theme_own()+
+                            coord_flip()
+tempo_genre_dot
+```
+Overall, the average BPM in each genre is quite high! That is a bit surprising, because music experts detected lower BPM are common for certain music types. For instance, Hip Hop is normally characterized by 85 to 95 BPM. Could be a hint, that popular tracks are a bit faster, than usual for their genre. 
+
+Let's create a categorial variable for tempo to explore, how tempo is connected to danceability and energy.
+
+First, plot a density plot to see the distribution for useful categorization. Use the full data set this time. 
+
+```{r tempo_dense_plot}
+tempo_dense_plot <- ggplot(data, aes(tempo))+
+  geom_density(alpha=0.6,color=vi.col_1, fill=vi.col_1)+
+  geom_histogram(aes(y=..density..), colour=vi.col_1,fill= vi.col_1, alpha=0.2)+
+    scale_x_continuous(breaks=seq(0,250,50), limits=c(0,250))+
+  labs(title= "Tempo distribution of tracks", subtitle = "Densitity plot", x= "Density", y= "Tempo in BPM")+
+  theme_own()
+tempo_dense_plot
+```
+
+You can see, there is a wide range of tempo!  Let's build categories out of it!
+
+```{r tempo_cat}
+data<- data %>% mutate(tempo_cat = case_when(tempo < 90 ~ "less than 90",
+                                                    tempo <= 120 ~ "up to 120",
+                                                    tempo <= 150 ~ "up to 150",
+                                                  tempo <=  180 ~ "up to 180",
+                                                  tempo >  180 ~ "more than 180"))
+#relevel
+data$tempo_cat <- factor(data$tempo_cat, levels= c("less than 90","up to 120","up to 150","up to 180", "more than 180"))
+```
+
+```{r energy_dance_tempo_plot}
+energy_dance_tempo_plot <- ggplot(data, aes(danceability, energy))+
+  geom_point(alpha=0.7, col=vi.col_1.3)+
+  labs(title= "Energy and dancability by genre", subtitle="Scatter plot", color= "Playlist genre")+
+  scale_color_viridis(discrete=TRUE, option="inferno")+
+  scale_y_continuous(breaks=seq(0,1,0.25), limits=c(0,1))+
+  scale_x_continuous(breaks=seq(0,1,0.25),limits=c(0,1))+
+  theme_own()+
+  facet_wrap(~tempo_cat)
+energy_dance_tempo_plot
+```
+
+Looks like over 180 BPM is a bit hard to dance to. Though the energy is very high!  
+Overall, the established range of songs between 90 and 120 BPM has in general the best scores for danceability and energy. Not that much of surprise, isn't it?
+
+So far, we investigated how three of the features are related to each other using data visualization. Following the former steps of data visualitzation we are only able to plot three variables at once. Of course, we could add a forth variable to it, using another group variable in the "Energy and dance by genre" graph. But in doing this, the graph isn't very concise anymore and the recipient will need a lot of time to find out what is exactly going on. So, let's move to the next step for plotting multiple relationships of the features at once. 
+
+## How do each of the features correlate with each other?
+
+With a correlation plot, we can visualize the relationships of all features at once. 
+
+```{r}
+# subset the data set to extract only features out of it
+features_data <- data %>% dplyr::select(energy, tempo, danceability, loudness, liveness, valence, speechiness,  instrumentalness,acousticness,duration_ms, key, mode)
+# create a correlation matrix
+features_cor <- round(cor(features_data),1)
+# create a corrplot
+features_corrplot <- ggcorrplot(features_cor, 
+                                hc.order=TRUE, #use hierarchical clustering for better overview
+                                type= "upper", #only the upper part for better overview, cause two sided correlation
+                                outline.col = "white",
+                                lab=TRUE) + #get labels
+  scale_fill_gradientn(colors = vi.col_light)
+features_corrplot
+```
+What we can see from the plot is that only vert few features are connected to each other, interesting!  
+Not connected with any feature in a remarkable way:  
+- key, speechiness, liveness, mode, tempo, duration and instrumentalness have no or only a minimum (>=0.2) correlation to the other features
+- valence and danceability and valence and energy has a small correlation of 0.3 -> there is a small correlation in the positiveness of a track and their danceability and energy, what seems to make sense, don't you think?
+- energy and loudness (0.6) have a positive, moderate correlation -> the more loud the music is, the more energy is in the music and vice versa
+- also, the energetic the music is, the less acoustic a track is (-0.7) (and vice versa)
+- the more acoustic (-.05) or instrumental (-0.4) a track is, the less loud is song.
+- was is especially interesting is, that the correlation of energy and danceability is zero, which means, no linear connection can't be found. This is very contradictory what can be assessed from the data visualisation before. That does not necessarily mean that there isn't any realtionship at all, it is more an indicator, that no linear relationship can't be found in the data.
+
+# Is there a secret receipt for a tracks' popularity?
+
+Of course, we could further investigate, how the features are connected to each other and how the relationship of the certain categories looks like. However, these features are created by spotify to deconstruct a track into certain components for the purpose of analysis. So, it would be more suitable to use them in that way. One option is, to use the features and create models to predict certain genres. Sadly, the dataset is a bit small for that and underrepresented genres fall short. A better option is to use the characterists and analyze, if we can build a convincing model to predict the popularity in tracks. Can we find a secret receipt for a track's popularity? This is fun question to answer, isn't it?
+
+
+Before we start, let's explore the distribution of popualriy in this track.
+
+```{r most pop}
+print("What are the top ten tracks?")
+data %>% dplyr::select(track_artist, track_name, playlist_genre, track_popularity) %>% arrange(desc(track_popularity))  %>% head(10)
+```
+
+Okay, interesting! All of the tracks belongs to the genre pop or genre and some of the songs are listed twice, because their genre assignment to pop and gaming. What are the most unpopular songs?
+
+```{r les pop}
+print("What are the ten most unpopular songs?")
+data %>% dplyr::select(track_artist, track_name, playlist_genre, track_popularity) %>% arrange(track_popularity)  %>% head(10)
+```
+We can see, the ten least popular tracks sharing the same popularity value of 68.
+
+Now, let's explore the popularity by genre.
+
+```{r pop_dot}
+pop_data <- data %>% group_by(playlist_genre) %>% summarize(Mean=mean(track_popularity), SD=sd(track_popularity))
+pop_dot<- ggplot(pop_data, aes(y= Mean, x=reorder(playlist_genre, Mean)), color=vi.col_1)+
+  geom_pointrange(aes(ymin = Mean - SD, ymax = Mean + SD ), color=vi.col_1)+
+  labs(title="Popularity by Genre", subtitle="Cleaveland Dotplot")+
+  scale_y_continuous(limits=c(60,90))+
+  theme_own()+
+  labs(y="Genre", x="Popularity")+
+  coord_flip()
+pop_dot
+```
+
+- Gaming and pop are by far the most genres with the most popular songs on overage, while jazz, korean, indian, classical and reggae genres contains the least popular tracks.
+
+And what is the overall distribution?
+
+```{r pop_hist}
+pop_hist <- ggplot(data, aes(x=track_popularity))+
+  geom_histogram(aes(y=..density..), binwidth=1, color=vi.col_1, fill=vi.col_1, alpha=0.4)+
+  geom_density(color=vi.col_1, lwd=1, alpha=.5, fill=vi.col_1, bw=1)+
+  theme_own()+
+  labs(title="Distribution of popularity",subtitle="Histogram", x="Popularity", y="Frequency")+
+  scale_x_continuous(breaks=seq(65,100,5), limits=c(65,100))
+pop_hist
+```
+
+- only a few tracks reach a very high popularity score. Most of the tracks have a score from 68 to 78. 
+
+## Is very happy or very sad or angry music more popular?
+
+The valence indicates the overall musical positiveness(emotion) of a track. High valence sounds happy; low valence sounds sad or angry. How are the valence and the track's popularity connected? Is very sad, angry or happt music more popular than emotional neutral music?
+
+```{r val_pop_scat_plot}
+val_pop_scat_plot <- ggplot(data, aes(valence, track_popularity))+
+  geom_point(alpha=0.7,col=vi.col_1)+
+  labs(title= "Musical positiveness and popularity by genre", subtitle="Scatter plot", color= "Playlist genre", x="Musical positiveness", y="Popularity")+
+  scale_color_viridis(discrete=TRUE, option="inferno")+
+    scale_x_continuous(breaks=seq(0,1,0.25),limits=c(0,1))+
+  theme_own()
+val_pop_scat_plot
+```
+Looks super messy! No connection at all! That's surprising! I would have expected, that very negative and very positive music is high in popularity. One possible answer could be the high popularity of gaming tracks. Gaming tracks aren't known for their emotional features.
+
+Nevertheless, let's add a linear polynomial regression to the graph and in doing so, create more insights of a possible relationsship.
+
+```{r val_pop_scat_plot}
+val_pop_scat_plot <- ggplot(data, aes(valence, track_popularity))+
+  geom_point(alpha=0.7,col=vi.col_1)+
+  geom_smooth(method=loess, se=TRUE, color=vi.col_1.3)+
+  labs(title= "Musical positiveness and popularity by genre", subtitle="Scatter plot with linear polynomial regression", color= "Playlist genre", x="Musical positiveness", y="Popularity")+
+  scale_color_viridis(discrete=TRUE, option="inferno")+
+    scale_x_continuous(breaks=seq(0,1,0.25),limits=c(0,1))+
+  theme_own()
+val_pop_scat_plot
+```
+No relation visible.
+
+Of course, we could now move on to the other futures and visualize the relationships. A better method is, to find a suitable model, where all impactful features are included and weighted according their relevance for the tracks popularity. For this, let's create a training set and a test and validation set. Precondition is, that we have each track only once in the data set, so we must remove duplicates from the set.
+
+```{r}
+#get songs in minutes instead of miliseconds, because could construct some bias
+features_data <- data %>% mutate(duration_min = duration_ms/60000)
+# remove the duplicates 
+features_data <- features_data %>% distinct(track_name, .keep_all = TRUE)
+# only features and predictor
+features_data <- features_data %>% dplyr::select(track_popularity,  energy,tempo, danceability,liveness, loudness,valence, speechiness, instrumentalness, mode, key, acousticness, duration_min)
+
+#create partition
+train_index <- createDataPartition(features_data$track_popularity, p = .7, 
+                                  list = FALSE, 
+                                  times = 1)
+#create training data
+train_data <- features_data[train_index,]
+
+#create val and test set
+val_test_data <- features_data[-train_index,]
+
+# remaining 30% into validation and test set
+val_index <- createDataPartition(val_test_data$track_popularity, p = .6, 
+                                  list = FALSE, 
+                                  times = 1)
+val_data <- val_test_data[val_index,]
+test_data <- val_test_data[-val_index,]
+
+# Outcome of this section is that the data (100%) is split into:
+# training (~70%)
+# validation (~20%)
+# test (~10%)
+```
+
+Are the popularity equally distributed in the training, validation and test set?
+
+```{r}
+hist <- ggplot()+
+  geom_density(data= train_data, aes(x=track_popularity, color= "t"), size=1, alpha=0.2)+ 
+  geom_density(data= val_data, aes(x=track_popularity, color="v"), size=1)+
+  geom_density(data= test_data, aes(x=track_popularity, color="te"), size=1)+
+  scale_color_manual(name= "color", values=c("t"=vi.col_1, "v"=vi.col_1.2,"te"=vi.col_1.4), labels=c("test", "valid", "train"))+
+  theme_minimal()
+
+hist
+```
+While the test and train set looks very similar, the validation set is a bit volatil and has less unpopular tracks.
+
+## A simple linear regression model
+
+All in all, we have 12 features, with which the tracks can be characterized. If we compute a linear regression model, we can determine the average effect of a feature, if the feature increases by 1, holding the other predictors fixed. Thus, it is necessary for the interpretation to keep the feature's bandwith in mind. Let's create some descriptives of the features and the outcome.
+
+```{r features_data_table, warning='hide'}
+#do we have missing values in here?
+table(is.na(features_data))
+
+# let's get the summaries
+features_descr<- features_data %>% dplyr::summarise_all(list(min=min, max=max, avg=mean, SD=sd)) 
+  #get a nicer data frame
+features_descr <- features_descr %>% pivot_longer(cols=everything(), names_to = c("item", ".value"), names_pattern="(.*)_(.*)") %>% as_tibble() %>% mutate(across(where(is.numeric), round,2))
+  # get a nice table
+features_data_table <- features_descr %>% gt() %>%
+  tab_header(title="Descriptives of features",subtitle="Minimum, Maximum, Average and SD of the features") %>%
+  cols_label(
+    item= "Feature",
+    min = "Minimum",
+    max = "Maximum") %>%
+  fmt_number(rows=c(1,2),
+             decimals = 0) %>%
+  tab_options(column_labels.background.color = vi.col_1)%>%
+  tab_style(
+    style= cell_text(
+      weight= 'bold',
+      font = google_font("Barlow")),
+    locations=cells_title(groups='title')) %>%
+    tab_style(
+    style= list(cell_fill(color= "thistle"),
+                cell_text(weight="bold")),
+    locations=cells_body(columns=item)) %>%
+  gt_theme_nytimes()
+features_data_table
+```
+
+We can clearly see, that the scores have very different ranges. One option is, to normalize the scores, so each score has an average of zero, while the highest possible score is 1 and the lowest possible score is 1. This has the big disadvantage, that it is not that straighforward to interprete the results with such scores. With normalized scores, one unit increase in the tempo means, that if you compare tracks with the lowest tempo to tracks with the average tempo the popularity of a track will increase by XX. You can see, this is a bit complicated description. Concluding, we don't normalize !
+
+
+```{r model_lm1}
+model_lm1 <- lm(track_popularity ~energy + tempo+danceability+loudness+liveness+valence+speechiness+instrumentalness+mode+key+acousticness+duration_min, data=features_data)
+summary(model_lm1)
+```
+- seems only that the energy, the loudness, the speechiness and the duration in minutes have significant and substantial effects. 
+- according to this linear regression, if the energy of a track is very slow, quiet and calm, a tracks popularity is reduced by 4 points, holding the other factors constant. Consistent to this, if a song is louder by ten decibels, the tracks popularity increases bt 2.5. 
+- What seems also very important is the speechiness of songs. Songs with a high number of spoken words have on average 10 points lower popularity as songs with only a few spoken words.
+- the longest track in the data set is over 9 minutes. If a track is one minute shorter than that, popularity will increase by 0.5 units. However, it would be a bit counterintuitive to assume a linear relationsship here. 
+
+
+So far, so good. In this model a linear relationsship is assumed for each feature. It is highly possible, that we are extremely underfitting the data and the model is not flexible enough for the patterns in reality. 
+
+
+Let's plot the predicted and the actual values of the data set against each other.
+
+```{r pred_scatter}
+pop_pred <- predict(model_lm1, newdata=features_data)
+pop_pred_data <- data.frame(actual_pop =features_data$track_popularity,
+                            pop_pred = pop_pred)
+pred_scatter <- ggplot(pop_pred_data, aes(x=pop_pred, y=actual_pop))+
+  geom_point(alpha=0.5, col=vi.col_1)+
+  labs(title= "Prediction of the tracks popularity", x= "Predicition", y="Given Popularity values")+
+  theme_own()
+pred_scatter
+```
+We are far away seeing a linear line here. If model_lm1 would be the perfect model, we could see a linear regression line, because each point on the y axis would be the same as the predicted one. 
+
+## Tuning Linear Regressions and Model Fit
+
+We can assess the model fit using the mse. It gives us insights, how much our model predicitions differ from the observed values. 
+
+$$
+MSE = \frac{1}{n} \sum_{i=1}^{n} (y - \hat{y})^2
+$$ 
+
+```{r mse}
+mse <- function(y_true, y_pred) {
+  mean((y_true - y_pred)^2) 
+}
+```
+
+```{r mse model_lm1 }
+#What is the mean squared error for the training set?
+mse(train_data$track_popularity, predict(model_lm1, train_data))
+```
+The average deviation from our prediction is 28.8, what is quite high against the background that the minimum popularity ios 68 and the highest 100. 
+
+In the next step, we compute the mse for the validation set. The MSE of our validation set helps us to finde the model, that fits not the data it is generated from, but the another subset of the same the same data to avoid overfitting. 
+
+```{r mse model_lm1 pred}
+mse(val_data$track_popularity, predict(model_lm1, val_data))
+```
+
+We can see, the MSE gets slightly worse, if we predict our model on the validation set. 
+
+Using all the features, not all of them seems to be substantial and significant. Sorting all the insignificant factors out, could be problmatic, because for example the effect of energy is computed, holding the other features constant. A better option is, to identify the best subset of the factors.
+
+Therefore, we generate formulas for each possible combination of the features, restricting the number of parameters to 6.
+
+```{r generate_formulas}
+generate_formulas <- function(p, x_vars, y_var) {
+  # Input checking
+  if (p %% 1 != 0)           stop("Input an integer n")
+  if (p > length(x_vars))    stop("p should be smaller than number of vars")
+  if (!is.character(x_vars)) stop("x_vars should be a character vector")
+  if (!is.character(y_var))  stop("y_vars should be character type")
+  
+  # combn generates all combinations, apply turns them into formula strings
+  apply(combn(x_vars, p), 2, function(vars) {
+    paste0(y_var, " ~ ", paste(vars, collapse = " + "))
+  })
+}
+
+#get the name of the features
+features_name <- colnames(features_data[2:13]) %>% as.character()
+
+formulas <- generate_formulas(p=6, #number of predictors
+                               x_vars=features_name,
+                               y_var= "track_popularity")
+# have a look in the 6 first formulas
+head(formulas)
+
+#how many formulas have we?
+length_formulas <- length(formulas)
+```
+Now, let's create a function to get the MSE of the linear regessions applied on the validation set. 
+
+```{r six_pred}
+# create MSE function
+lm_mse <- function(formula, train_data, val_data) {
+  y_name <- as.character(formula)[2]
+  y_true <- val_data[[y_name]]
+  
+  lm_fit <- lm(formula, train_data)
+  y_pred <- predict(lm_fit, newdata = val_data)
+  
+  mean((y_true - y_pred)^2)
+}
+
+#create a vector for MSE values
+mses6 <- rep(0,length_formulas)
+
+for(i in 1:length_formulas){
+ mses6[i] <- lm_mse(as.formula(formulas[i]), train_data, val_data)
+}
+
+six_pred <-formulas[which.min(mses6)]
+six_pred
+```
+And now the same procedure for the five and four best predictors.
+
+```{r five_pred}
+formulas <- generate_formulas(p=5, #number of predictors
+                               x_vars=features_name,
+                               y_var= "track_popularity")
+length_formulas <- length(formulas)
+
+mses5 <- rep(0,length_formulas)
+
+for(i in 1:length_formulas){
+ mses5[i] <- lm_mse(as.formula(formulas[i]), train_data, val_data)
+}
+
+five_pred <-formulas[which.min(mses5)]
+five_pred
+```
+```{r four_pred}
+formulas <- generate_formulas(p=4, #number of predictors
+                               x_vars=features_name,
+                               y_var= "track_popularity")
+length_formulas <- length(formulas)
+
+mses4 <- rep(0,length_formulas)
+
+for(i in 1:length_formulas){
+ mses4[i] <- lm_mse(as.formula(formulas[i]), train_data, val_data)
+}
+
+four_pred <-formulas[which.min(mses4)]
+four_pred
+```
+Seems like the energy, the loudness, the speechiness and the duration are important factors in all the models. 
+
+And which of the models has the smallest MSE on the validation set?
+
+```{r}
+"MSE of the four predictor model"
+min(mses4)
+"MSE of the five predictor model"
+min(mses5)
+"MSE of the dix predictor model"
+min(mses6)
+```
+
+
+Interesting! All of the models have the same MSE and it's quite high! To do this for all possible combinations could be a bit cumbersome and needs a lot of computational power. Intead, we could use a lasso regression, what is a good option, when a realtively small number of predictors have substantial coefficients like in this regression. For more infos about LASSO see this [Chapter](https://bookdown.org/ssjackson300/Machine-Learning-Lecture-Notes/the-lasso.html#disadvantage-of-ridge-regression)
+
+```{r}
+#create model matrix
+x_train <- model.matrix(track_popularity ~ ., data=train_data)
+head(x_train)
+```
+
+
+```{r}
+# let's do a lasso regression
+result <- glmnet(x      = x_train[, -1],          # X matrix without intercept
+                 y      = train_data$track_popularity, 
+                 alpha =1 )                      # using k-fold validation to tune lambda
+# plot
+plot(result, xvar='lambda')
+```
+Overall, we have 12 predictors included.
+
+That gives good insights, at which lambda another or multiple predictors are set to zero.
+
+A better way to use lambda is to use cross-validation.
+
+```{r}
+x_cv <- model.matrix(track_popularity ~ ., bind_rows(train_data, val_data))[, -1]
+result_cv <- cv.glmnet(x = x_cv, y = c(train_data$track_popularity, val_data$track_popularity), nfolds = 15)
+best_lambda <- result_cv$lambda.min
+best_lambda
+```
+Which coefficients are part of the minimum lambda value?
+
+```{r}
+round(cbind(
+  coef(result_cv, s = 'lambda.min')),3)
+```
+The best model according to this lasso regression is without the tempo and the mode features.
+
+Let's assess the performance of the model.
+
+```{r}
+# Model 1
+mse(test_data$track_popularity, predict(model_lm1, test_data))
+# best subset of four
+pred_sub <- predict(lm(four_pred, data = train_data),newdata = test_data)
+mse(test_data$track_popularity, pred_sub)
+# cv.lasso
+test <- model.matrix(track_popularity ~ ., data = test_data)[, -1]
+pred_las <- as.numeric(predict(result_cv, newx=test, s=best_lambda))
+mse(test_data$track_popularity, pred_las)
+```
+Overall, we could see the linear regression models have a very bad MSE. We can do better than that ! Most of the relationsships in the data aren't linear, because it's more about the sweet spot!
+
+## Beyond linearity
+
+Now, we investigate the features one by one in order to identify, how they are connected to the popularity.
+
+For better visualization, the following function is helpful:
+
+```{r}
+pred_plot <- function(model) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data$energy), max(train_data$energy), length.out = 986) # set the x value for pred from the lowest lstat value to the highest. We now get a vector with 500 values from the lowest lstat to the highest. The numbers are generated randomly, so we have simulated data.
+  y_pred <- predict(model, newdata = tibble(energy = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
+  
+  train_data %>% #we set the data that we want to use
+    ggplot(aes(x = energy, y = track_popularity)) + #we define the asthetics and map them
+    geom_point(alpha= 0.7, color= "steelblue4") + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(energy = x_pred, track_popularity = y_pred), size = 1, col = "purple") + #we add a line for the predicted y on the predicted x data
+    theme_own() # we define a nice theme
+}
+```
+
+A four-degree polynomial.
+
+```{r}
+poly3_mod <- lm(track_popularity ~poly(energy,5), data=train_data)
+pred_plot(poly3_mod)
+```
+
+For a model with splines.
+```{r}
+#for the knots
+ns_mod <- lm(track_popularity ~ bs(energy, df=2, knots=c(0.2,0.5,0.8)), data= train_data)
+pred_plot(ns_mod)
+```
+
+
+
