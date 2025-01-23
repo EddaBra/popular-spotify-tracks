@@ -1,5 +1,5 @@
 ---
-title: "Exploring polular Spotify Tracks"
+title: "Exploring the Popularity of Spotify Tracks"
 ---
 
 What makes a song popular in todays world? Is there a secret receipt for success? In this project I investigate these and further questions using a open source data set of Spotify tracks.
@@ -78,17 +78,17 @@ str(data)
 ```{r theme, results='hide'}
 theme_own <- function(){
   theme_minimal() +
-    theme(text=element_text(size=12,family = "Barlow"),
-          axis.text.x = element_text(size = 10, angle=90),
-          axis.text.y = element_text(size = 10),
-          axis.title = element_text(size = 11, face = "bold"),
+    theme(text=element_text(size=16,family = "Barlow"),
+          axis.text.x = element_text(size = 16, angle=90),
+          axis.text.y = element_text(size = 16),
+          axis.title = element_text(size = 20, face = "bold"),
           panel.grid.minor = element_blank(),
-          plot.title = element_text(size=14, face="bold"),
+          plot.title = element_text(size=26, face="bold"),
           panel.grid.major = element_line(colour = "grey70", linewidth =  0.2),
           legend.position="bottom",
-          legend.title = element_text(size=11),
-          legend.text = element_text(size=10),
-          strip.text = element_text(size = 10),
+          legend.title = element_text(size=16),
+          legend.text = element_text(size=14),
+          strip.text = element_text(size = 14),
           strip.placement = "outside",
           panel.spacing = unit(1, "lines"),
           strip.background = element_blank()) }
@@ -486,9 +486,11 @@ Not connected with any feature in a remarkable way:\
 
 # Is there a secret receipt for a tracks' popularity?
 
-Of course, we could further investigate, how the features are connected to each other and how the relationship of the certain categories looks like. However, these features are created by spotify to deconstruct a track into certain components for the purpose of analysis. So, it would be more suitable to use them in that way. One option is, to use the features and create models to predict certain genres. Sadly, the dataset is a bit small for that and underrepresented genres fall short. A better option is to use the characterists and analyze, if we can build a convincing model to predict the popularity in tracks. Can we find a secret receipt for a track's popularity? This is fun question to answer, isn't it?
+Of course, we could further investigate, how the features are connected to each other and how the relationship of the certain categories looks like. However, these features are created by spotify to deconstruct a track into certain components for the purpose of analysis. So, it would be more suitable to use them in that way. One option is, to use the features and create models to predict certain genres. Sadly, the dataset is a bit small for that and underrepresented genres fall short. A better option is to use the characterists and analyze, if we can build a convincing model to predict the popularity in tracks. Can we find a secret receipt for a track's popularity?
 
-Before we start, let's explore the distribution of popualriy in this track.
+## The distribution of popularity
+
+Before we start, let's explore the distribution of popularity in this track.
 
 ```{r most pop}
 print("What are the top ten tracks?")
@@ -506,7 +508,7 @@ We can see, the ten least popular tracks sharing the same popularity value of 68
 
 And what is the overall distribution?
 
-```{r pop_hist}
+```{r pop_hist, warning=FALSE}
 pop_hist <- ggplot(data, aes(x=track_popularity))+
   geom_histogram(aes(y=..density..), binwidth=1, color=vi.col_1, fill=vi.col_1, alpha=0.4)+
   geom_density(color=vi.col_1, lwd=1, alpha=.5, fill=vi.col_1, bw=1)+
@@ -517,8 +519,6 @@ pop_hist
 ```
 
 -   only a few tracks reach a very high popularity score. Most of the tracks have a score from 68 to 78.
-
-## Popularity by genre
 
 Now, let's explore the popularity by genre.
 
@@ -536,7 +536,7 @@ pop_dot
 
 -   Gaming and pop are by far the most genres with the most popular songs on overage, while jazz, korean, indian, classical and reggae genres contains the least popular tracks.
 
-## Is very happy or very sad or angry music more popular?
+## Is very happy, sad or angry music more popular? Visualizing the influence of valence on popularity
 
 The valence indicates the overall musical positiveness(emotion) of a track. High valence sounds happy; low valence sounds sad or angry. How are the valence and the track's popularity connected? Is very sad, angry or happt music more popular than emotional neutral music?
 
@@ -553,7 +553,7 @@ val_pop_scat_plot
 
 No relation visible.
 
-Of course, we could now move on to the other futures and visualize the relationships. A better method is, to find a suitable model, where all impactful features are included and weighted according their relevance for the tracks popularity. For this, let's create a training set and a test and validation set. Precondition is, that we have each track only once in the data set, so we must remove duplicates from the set.
+We could now move on to the other futures and visualize the relationships. A better method is, to find a suitable model, where all impactful features are included and weighted according their relevance for the tracks popularity. For this, let's create a training set and a test and validation set. Precondition is, that we have each track only once in the data set, so we must remove duplicates from the set.
 
 ```{r data set partition}
 #get songs in minutes instead of miliseconds, because could construct some bias
@@ -601,9 +601,13 @@ hist
 
 While the test and train set looks very similar, the validation set is a bit volatil and has less unpopular tracks.
 
-## A simple linear regression model
+## What features are important for the popularity? 
 
-All in all, we have 12 features, with which the tracks can be characterized. If we compute a linear regression model, we can determine the average effect of a feature, if the feature increases by 1, holding the other predictors fixed. Thus, it is necessary for the interpretation to keep the feature's bandwith in mind. Let's create some descriptives of the features and the outcome.
+All in all, we have 12 features, with which the tracks can be characterized. What features matters for popularity and how is the relationship between a feature and the popularity of a track? For instance, is the energy of track a meaningful feature and if so, does the increase of energy always comes along with an increase inpopularity or could be, that too much energy is detrimental to the popularity as well?
+
+### Linear regression
+
+We start with a simple linear regression. If we compute a linear regression model, we can determine the average effect of a feature, if the feature increases by 1, holding the other predictors fixed. Thus, it is necessary for the interpretation to keep the feature's bandwith in mind. Let's create some descriptives of the features and the outcome.
 
 ```{r features_data_table}
 #do we have missing values in here?
@@ -798,7 +802,7 @@ min(mses5)
 min(mses6)
 ```
 
-Interesting! All of the models have the same MSE and it's quite high! To do this for all possible combinations could be a bit cumbersome and needs a lot of computational power. Intead, we could use a lasso regression, what is a good option, when a realtively small number of predictors have substantial coefficients like in this regression. For more infos about LASSO see this [Chapter](https://bookdown.org/ssjackson300/Machine-Learning-Lecture-Notes/the-lasso.html#disadvantage-of-ridge-regression)
+Interesting! All of the models have the same MSE and it's quite high! To do this for all possible combinations could be a bit cumbersome and needs a lot of computational power. Intead, we could use a lasso regression, what is a good option, when a relatively small number of predictors have substantial coefficients like in this regression. For more infos about LASSO see this [Chapter](https://bookdown.org/ssjackson300/Machine-Learning-Lecture-Notes/the-lasso.html#disadvantage-of-ridge-regression).
 
 ```{r}
 #create model matrix

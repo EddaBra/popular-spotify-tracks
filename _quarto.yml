@@ -2,11 +2,11 @@ project:
   type: website
 
 website:
-  title: "popular-spotify-tracks"
+  title: "The popularity of songs"
   navbar:
     left:
       - href: index.qmd
-        text: Exploring the Popularity of Spotify Tracks
+        text: Using Supervised Machine Learning and Data Visualization
 
 format:
   html:
