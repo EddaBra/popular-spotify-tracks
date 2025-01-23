@@ -903,7 +903,7 @@ pred_plot_energy(bs_mod_energy, "energy", "splines with 5 DF")+
 ```
 Splines have the disadvantage, that they usually very volatile at the ends, because often the very low and very high values have a lot of variance. Also, the confidence intervals could be a bit wiggly, especially in small data sets as ours. So, we go with natural splines.
 
-```{r bs_mod_energy}
+```{r ns_mod_energy}
 ns_mod_energy <- lm(track_popularity ~ ns(energy, df=5), data= train_data)
 pred_plot_energy(ns_mod_energy, "energy", "natural splines with 5 DF")+
   labs()
@@ -1006,7 +1006,7 @@ pred_plot_dur(ns_mod_dur, "duration_min", "natural splines with 5 DF")+
 
 Using this time the validation model for tuning, if necessary
 
-```{r}
+```{r gam_model}
 gam_model <- gam(track_popularity ~ ns(energy, df=5) + ns(danceability, df=5) + ns(acousticness, df=5)+ ns(duration_min, df=5) +cut(loudness, breaks = c(-43.6, -20, 1.29)) #tuned relationships
                   , data= train_data)
 
@@ -1016,9 +1016,6 @@ plot( gam_model,  se = TRUE, col =  vi.col_1 )
                    
 ```
 
-```{r}
-mse(val_data$track_popularity, predict(gam_model, val_data))
-```
 
 
 
