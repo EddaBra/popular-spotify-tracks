@@ -50,8 +50,11 @@ Most of the songs in the data set have a medium to high energy and danceability!
 
 **Making the model more flexible identifying appropriate splines**
 <img src= "https://github.com/user-attachments/assets/fb3299c3-e603-49ca-b5f0-28e0e62a18fe" height="340">
-<img src= "https://github.com/user-attachments/assets/ac189369-f6fa-4af1-b43b-fe80835589ff height="340">
-<img src= "https://github.com/user-attachments/assets/7715f0fb-ddad-4dd2-8793-817c3053be2c height="340">
-<img src= "https://github.com/user-attachments/assets/8bae8814-8a1a-4b5f-a498-d08e8a6d7baf height="340">
+<img src= "https://github.com/user-attachments/assets/04314f55-5245-43dc-a1d1-1125092bfbd7" height="340">
+<img src= "https://github.com/user-attachments/assets/709796eb-6117-4bf5-b7b7-f1f22e35a815" height="340">
+<img src= "https://github.com/user-attachments/assets/7936349b-cd2f-4eda-ae8a-357f2a819f40" height="340">
+<img src= "https://github.com/user-attachments/assets/25e328eb-f5c8-4688-95a7-3d6332ede773" height="340">
+
+
 
 
