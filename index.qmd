@@ -9,7 +9,7 @@ What makes a song popular in todays world? Is there a secret receipt for success
 **Step 1. Load the libraries**
 
 ```{r libraries, results= 'hide', warning=FALSE, message=FALSE}
-#renv::install("ISLR")
+#renv::install("gam")
 library(tidyverse) #basic
 library(tibble) #tibble
 library(ggplot2) #ggplot
@@ -32,8 +32,9 @@ library(lubridate) #dates to numeric
 library(showtext) #for adding fonts
 library(caret) #train test data set
 library(glmnet) # for ridge regression
-library(ISLR) # for splines and polys
-library(splines)
+library(ISLR) 
+library(splines) # for splines
+library(gam) #for GAM
 loadfonts(device="win", quiet= TRUE)
 font_add_google(name="Barlow", family="Barlow")
 showtext_auto()
@@ -78,17 +79,17 @@ str(data)
 ```{r theme, results='hide'}
 theme_own <- function(){
   theme_minimal() +
-    theme(text=element_text(size=16,family = "Barlow"),
-          axis.text.x = element_text(size = 16, angle=90),
-          axis.text.y = element_text(size = 16),
-          axis.title = element_text(size = 20, face = "bold"),
+    theme(text=element_text(size=20,family = "Barlow"),
+          axis.text.x = element_text(size = 20, angle=90),
+          axis.text.y = element_text(size = 20),
+          axis.title = element_text(size = 24, face = "bold"),
           panel.grid.minor = element_blank(),
-          plot.title = element_text(size=26, face="bold"),
+          plot.title = element_text(size=30, face="bold"),
           panel.grid.major = element_line(colour = "grey70", linewidth =  0.2),
           legend.position="bottom",
-          legend.title = element_text(size=16),
+          legend.title = element_text(size=20),
           legend.text = element_text(size=14),
-          strip.text = element_text(size = 14),
+          strip.text = element_text(size = 20),
           strip.placement = "outside",
           panel.spacing = unit(1, "lines"),
           strip.background = element_blank()) }
@@ -101,6 +102,8 @@ vi.col_1 <- "#5D126EFF"
 vi.col_1.2 <- "#FCA50AFF" 
 vi.col_1.3 <- "#F8850FFF"
 vi.col_1.4 <- "#DD513AFF"
+vi.col_1.5 <- "#932667FF"
+vi.col_1.6 <- "#0C0826FF"
 #2 Farben 
 vi.col_2 <- c("#5D126EFF", 
               "#FCA50AFF") 
@@ -855,38 +858,170 @@ pred_las <- as.numeric(predict(result_cv, newx=test, s=best_lambda))
 mse(test_data$track_popularity, pred_las)
 ```
 
-Overall, we could see the linear regression models have a very bad MSE. We can do better than that ! Most of the relationsships in the data aren't linear, because it's more about the sweet spot!
+Overall, we could see the linear regression models have a very bad MSE. We can do better than that ! 
 
-## Beyond linearity
+## Beyond linearity: Exploring the relationship between popularity and the four most influential features
 
-Now, we investigate the features one by one in order to identify, how they are connected to the popularity.
+We have already found out, using a linear model, that not all features have an substantial and significant effect on the popularity. Most of the relationsships in the data aren't linear, because it's more about the sweet spot in for instance energy for gaining popularity. Therefore, we investigate the six most important features one by one in order to identify, how they are connected to the popularity.
+
+```{r}
+print("Our most impactful subset selection")
+print(six_pred)
+```
+
 
 For better visualization, the following function is helpful:
 
-```{r}
-pred_plot <- function(model) { #defines the function, needs model as an argument
-  x_pred <- seq(min(train_data$energy), max(train_data$energy), length.out = 986) # set the x value for pred from the lowest lstat value to the highest. We now get a vector with 500 values from the lowest lstat to the highest. The numbers are generated randomly, so we have simulated data.
+```{r pred_plot_energy}
+pred_plot_energy <- function(model, feature_name, subtitle) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data[[feature_name]]), max(train_data[[feature_name]]), length.out = 986)
   y_pred <- predict(model, newdata = tibble(energy = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
-  
+  ttl.1 <- "Splines to capture the relationship between Popularity and "
+  ttl_name <- paste(ttl.1,feature_name)
   train_data %>% #we set the data that we want to use
     ggplot(aes(x = energy, y = track_popularity)) + #we define the asthetics and map them
-    geom_point(alpha= 0.7, color= "steelblue4") + #we want a scatterplot, so we define the associated geom
-    geom_line(data = tibble(energy = x_pred, track_popularity = y_pred), size = 1, col = "purple") + #we add a line for the predicted y on the predicted x data
+    geom_point(alpha= 0.7, color= vi.col_1.3) + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(energy = x_pred, track_popularity = y_pred), size = 1.5, col = vi.col_1) +
+    labs(y="Popularity", x=feature_name, title= ttl_name, subtitle=subtitle)+ #we add a line for the predicted y on the predicted x data
     theme_own() # we define a nice theme
 }
 ```
 
-A four-degree polynomial.
+A five-degree polynomial.
 
-```{r}
-poly3_mod <- lm(track_popularity ~poly(energy,5), data=train_data)
-pred_plot(poly3_mod)
+```{r poly5_mod_energy}
+poly5_mod_energy <- lm(track_popularity ~poly(energy,degree= 5), data=train_data)
+pred_plot_energy(poly5_mod_energy, "energy", "polynomial")
 ```
 
-For a model with splines.
+For a model with splines, in which curves are not plotted globally but are also local smooth (not like stepwise functions).  By default for a 5 degree of freedom curve knots placed at the 25th, 50th and 75th percentiles are chosen, what is a popular approach, if it is not clear where to set the nods. This seems to be also a very good choice comparint the chosen percentiles to visual difference in the data.
+
+```{r bs_mod_energy}
+bs_mod_energy <- lm(track_popularity ~ bs(energy, df=5), data= train_data)
+pred_plot_energy(bs_mod_energy, "energy", "splines with 5 DF")+
+  labs()
+```
+Splines have the disadvantage, that they usually very volatile at the ends, because often the very low and very high values have a lot of variance. Also, the confidence intervals could be a bit wiggly, especially in small data sets as ours. So, we go with natural splines.
+
+```{r bs_mod_energy}
+ns_mod_energy <- lm(track_popularity ~ ns(energy, df=5), data= train_data)
+pred_plot_energy(ns_mod_energy, "energy", "natural splines with 5 DF")+
+  labs()
+```
+Perfect! We found out our first term for our Generalized Additive Models, (see later).
+
+Next, we investigate the danceability.
+
+```{r ns_mod_dance}
+pred_plot_dance <- function(model, feature_name, subtitle) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data[[feature_name]]), max(train_data[[feature_name]]), length.out = 986)
+  y_pred <- predict(model, newdata = tibble(danceability = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
+  ttl.1 <- "Splines to capture the relationship between Popularity and "
+  ttl_name <- paste(ttl.1,feature_name)
+  train_data %>% #we set the data that we want to use
+    ggplot(aes(x = danceability, y = track_popularity)) + #we define the asthetics and map them
+    geom_point(alpha= 0.7, color= vi.col_1) + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(danceability = x_pred, track_popularity = y_pred), size = 1.5, col = vi.col_1.2) +
+    labs(y="Popularity", x=feature_name, title= ttl_name, subtitle=subtitle)+ #we add a line for the predicted y on the predicted x data
+    theme_own() # we define a nice theme
+}
+
+ns_mod_dance <- lm(track_popularity ~ ns(danceability, df=5), data= train_data)
+pred_plot_dance(ns_mod_dance, "danceability", "natural splines with 5 DF")+
+  labs()
+```
+Seems fine to match the data. Decision of choosing 3 knots according to the 25th, 50th and 75th percentile is also a good approach here.
+
+```{r pred_plot_loud}
+pred_plot_loud <- function(model, feature_name, subtitle) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data[[feature_name]]), max(train_data[[feature_name]]), length.out = 986)
+  y_pred <- predict(model, newdata = tibble(loudness = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
+  ttl.1 <- "Splines to capture the relationship between Popularity and "
+  ttl_name <- paste(ttl.1,feature_name)
+  train_data %>% #we set the data that we want to use
+    ggplot(aes(x = loudness, y = track_popularity)) + #we define the asthetics and map them
+    geom_point(alpha= 0.7, color= vi.col_1.6) + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(loudness = x_pred, track_popularity = y_pred), size = 1.5, col = vi.col_1.4) +
+    labs(y="Popularity", x=feature_name, title= ttl_name, subtitle=subtitle)+ #we add a line for the predicted y on the predicted x data
+    theme_own() # we define a nice theme
+}
+
+ns_mod_loud <- lm(track_popularity ~ ns(loudness, df=5), data= train_data)
+pred_plot_loud(ns_mod_loud, "loudness", "natural splines with 5 DF")+
+  labs()
+```
+Four loudness a stepwise approach seems more appropriate. 
+
+```{r step_mod5_loud}
+max(features_data$loud)
+min(features_data$loud)
+breaks2 <- c(-43.6, -20, 1.29)
+step_mod5_loud <- lm(track_popularity ~ cut(loudness, breaks = breaks2), data=train_data)
+pred_plot_loud(step_mod5_loud, "loudness", "stepwise")+
+  labs()
+```
+
+acousticness.
+
+```{r ns_mod_ac}
+pred_plot_ac <- function(model, feature_name, subtitle) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data[[feature_name]]), max(train_data[[feature_name]]), length.out = 986)
+  y_pred <- predict(model, newdata = tibble(acousticness = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
+  ttl.1 <- "Splines to capture the relationship between Popularity and "
+  ttl_name <- paste(ttl.1,feature_name)
+  train_data %>% #we set the data that we want to use
+    ggplot(aes(x = acousticness, y = track_popularity)) + #we define the asthetics and map them
+    geom_point(alpha= 0.7, color= vi.col_1.3) + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(acousticness = x_pred, track_popularity = y_pred), size = 1.5, col = vi.col_1.5) +
+    labs(y="Popularity", x=feature_name, title= ttl_name, subtitle=subtitle)+ #we add a line for the predicted y on the predicted x data
+    theme_own() # we define a nice theme
+}
+
+ns_mod_ac <- lm(track_popularity ~ ns(acousticness, df=5), data= train_data)
+pred_plot_ac(ns_mod_ac, "acousticness", "natural splines with 5 DF")+
+  labs()
+```
+And last but not least, the duration.
+
+```{r ns_mod_dur}
+pred_plot_dur <- function(model, feature_name, subtitle) { #defines the function, needs model as an argument
+  x_pred <- seq(min(train_data[[feature_name]]), max(train_data[[feature_name]]), length.out = 986)
+  y_pred <- predict(model, newdata = tibble(duration_min = x_pred)) #we predict the numeric outcome for y based on model we have defined and use for the prediction the randomly generated data x_pred
+  ttl.1 <- "Splines to capture the relationship between Popularity and "
+  ttl_name <- paste(ttl.1,feature_name)
+  train_data %>% #we set the data that we want to use
+    ggplot(aes(x = duration_min, y = track_popularity)) + #we define the asthetics and map them
+    geom_point(alpha= 0.7, color= vi.col_1.4) + #we want a scatterplot, so we define the associated geom
+    geom_line(data = tibble(duration_min = x_pred, track_popularity = y_pred), size = 1.5, col = vi.col_1.6) +
+    labs(y="Popularity", x=feature_name, title= ttl_name, subtitle=subtitle)+ #we add a line for the predicted y on the predicted x data
+    theme_own() # we define a nice theme
+}
+
+ns_mod_dur <- lm(track_popularity ~ ns(duration_min, df=5), data= train_data)
+pred_plot_dur(ns_mod_dur, "duration_min", "natural splines with 5 DF")+
+  labs()
+```
+
+## Putting them together: A flexible model to capture the features influence on popularity
+
+Using this time the validation model for tuning, if necessary
 
 ```{r}
-#for the knots
-ns_mod <- lm(track_popularity ~ bs(energy, df=2, knots=c(0.2,0.5,0.8)), data= train_data)
-pred_plot(ns_mod)
+gam_model <- gam(track_popularity ~ ns(energy, df=5) + ns(danceability, df=5) + ns(acousticness, df=5)+ ns(duration_min, df=5) +cut(loudness, breaks = c(-43.6, -20, 1.29)) #tuned relationships
+                  , data= train_data)
+
+summary(gam_model)
+par( mfrow = c(1,5) )
+plot( gam_model,  se = TRUE, col =  vi.col_1 )
+                   
 ```
+
+```{r}
+mse(val_data$track_popularity, predict(gam_model, val_data))
+```
+
+
+
+
+
+
